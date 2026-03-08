@@ -48,8 +48,8 @@ Recovery:   Load Manifest → Verify SSTables → Replay WAL → Ready
 
 ```go
 import (
-    "github.com/storage-engine-graph-db/pkg/storage"
-    "github.com/storage-engine-graph-db/pkg/graph"
+    "github.com/ayushanand18/crazygraphstore/pkg/storage"
+    "github.com/ayushanand18/crazygraphstore/pkg/graph"
 )
 
 // Create engine

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/storage-engine-graph-db/pkg/sstable"
+	"github.com/ayushanand18/crazygraphstore/pkg/sstable"
 )
 
 var ErrMergerDone = errors.New("merger exhausted")

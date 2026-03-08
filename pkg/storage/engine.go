@@ -9,12 +9,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/storage-engine-graph-db/pkg/cache"
-	"github.com/storage-engine-graph-db/pkg/compaction"
-	"github.com/storage-engine-graph-db/pkg/graph"
-	"github.com/storage-engine-graph-db/pkg/manifest"
-	"github.com/storage-engine-graph-db/pkg/persistence"
-	"github.com/storage-engine-graph-db/pkg/wal"
+	"github.com/ayushanand18/crazygraphstore/pkg/cache"
+	"github.com/ayushanand18/crazygraphstore/pkg/compaction"
+	"github.com/ayushanand18/crazygraphstore/pkg/graph"
+	"github.com/ayushanand18/crazygraphstore/pkg/manifest"
+	"github.com/ayushanand18/crazygraphstore/pkg/persistence"
+	"github.com/ayushanand18/crazygraphstore/pkg/wal"
 )
 
 // Engine is the main storage engine with shared-nothing write lanes.

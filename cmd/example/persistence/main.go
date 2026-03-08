@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/storage-engine-graph-db/pkg/graph"
-	"github.com/storage-engine-graph-db/pkg/storage"
+	"github.com/ayushanand18/crazygraphstore/pkg/graph"
+	"github.com/ayushanand18/crazygraphstore/pkg/storage"
 )
 
 func main() {
