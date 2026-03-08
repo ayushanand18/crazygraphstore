@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/storage-engine-graph-db/pkg/memtable"
-	"github.com/storage-engine-graph-db/pkg/sstable"
+	"github.com/ayushanand18/crazygraphstore/pkg/memtable"
+	"github.com/ayushanand18/crazygraphstore/pkg/sstable"
 )
 
 // Flusher manages background flushing of memtables to SSTables.

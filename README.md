@@ -3,8 +3,6 @@
 
 > A high-performance, LSM-tree based storage engine optimized for graph database workloads, implemented in Go.
 
-**B.Tech Final Year Project** at National Institute of Technology Durgapur
-
 ## Features
 
 - **Shared-Nothing Architecture**: 16 parallel write lanes with zero lock contention
@@ -20,7 +18,7 @@
 |-----------|---------------|------------|
 | Write (with WAL) | <2ms | 50k+ ops/sec |
 | Read (cached) | <1ms | 500k+ ops/sec |
-| Read (disk) | <5ms | 100k+ ops/sec |
+| Read (disk) | <3ms | 170k+ ops/sec |
 
 ## Quick Start
 
@@ -29,20 +27,14 @@
 go mod tidy
 
 # Run example
-go run cmd/example/main.go
+go run cmd/example/simple/main.go
 
 # Or with persistence
-go run cmd/example-phase2/main.go
+go run cmd/example/persistencemain.go
 ```
 
 ## Documentation
-
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design
-- **[STATUS.md](STATUS.md)** - Current implementation status
-- **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** - Development roadmap
-- **[SETUP.md](SETUP.md)** - Installation and setup guide
-- **[RUNNING.md](RUNNING.md)** - Running and deployment guide
-- **[OPTIMIZATIONS.md](GOLANG_OPTIMIZATIONS.md)** - Performance optimization guide
+- [Docs are available here](docs/)
 
 ## Architecture Overview
 
@@ -56,8 +48,8 @@ Recovery:   Load Manifest → Verify SSTables → Replay WAL → Ready
 
 ```go
 import (
-    "github.com/storage-engine-graph-db/pkg/storage"
-    "github.com/storage-engine-graph-db/pkg/graph"
+    "github.com/ayushanand18/crazygraphstore/pkg/storage"
+    "github.com/ayushanand18/crazygraphstore/pkg/graph"
 )
 
 // Create engine

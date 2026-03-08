@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/storage-engine-graph-db/pkg/graph"
+	"github.com/ayushanand18/crazygraphstore/pkg/graph"
 )
 
 // CacheTier represents the different cache tiers.

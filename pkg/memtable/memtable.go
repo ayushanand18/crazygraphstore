@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/storage-engine-graph-db/pkg/graph"
+	"github.com/ayushanand18/crazygraphstore/pkg/graph"
 )
 
 // Entry represents a key-value pair in the memtable.

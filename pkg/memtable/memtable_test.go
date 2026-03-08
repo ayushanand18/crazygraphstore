@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/storage-engine-graph-db/pkg/graph"
+	"github.com/ayushanand18/crazygraphstore/pkg/graph"
 )
 
 func TestMemtable_New(t *testing.T) {

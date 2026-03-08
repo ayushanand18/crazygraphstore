@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/storage-engine-graph-db/pkg/graph"
-	"github.com/storage-engine-graph-db/pkg/sstable"
+	"github.com/ayushanand18/crazygraphstore/pkg/graph"
+	"github.com/ayushanand18/crazygraphstore/pkg/sstable"
 )
 
 func createTestSSTableForCompaction(t *testing.T, path string, keyPrefix string, count int) {

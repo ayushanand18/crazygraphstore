@@ -7,9 +7,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/storage-engine-graph-db/pkg/graph"
-	"github.com/storage-engine-graph-db/pkg/memtable"
-	"github.com/storage-engine-graph-db/pkg/wal"
+	"github.com/ayushanand18/crazygraphstore/pkg/graph"
+	"github.com/ayushanand18/crazygraphstore/pkg/memtable"
+	"github.com/ayushanand18/crazygraphstore/pkg/wal"
 )
 
 // WriteLane represents a single shared-nothing write lane.

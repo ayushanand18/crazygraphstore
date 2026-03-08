@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/storage-engine-graph-db/pkg/graph"
+	"github.com/ayushanand18/crazygraphstore/pkg/graph"
 )
 
 func createTestSSTable(t *testing.T, path string, numEntries int) {

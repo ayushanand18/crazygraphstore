@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/storage-engine-graph-db/pkg/sstable"
+	"github.com/ayushanand18/crazygraphstore/pkg/sstable"
 )
 
 // Strategy represents the compaction strategy.
