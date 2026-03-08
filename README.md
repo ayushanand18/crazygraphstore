@@ -3,8 +3,6 @@
 
 > A high-performance, LSM-tree based storage engine optimized for graph database workloads, implemented in Go.
 
-**B.Tech Final Year Project** at National Institute of Technology Durgapur
-
 ## Features
 
 - **Shared-Nothing Architecture**: 16 parallel write lanes with zero lock contention
