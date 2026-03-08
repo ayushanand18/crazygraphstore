@@ -129,7 +129,7 @@ go test ./... -bench=. -benchmem
 
 ## Contributing
 
-This is an academic project. Contributions for:
+No longer just an academic project. Contributions for:
 - Unit tests and benchmarks
 - Documentation improvements
 - Bug fixes and optimizations
@@ -139,19 +139,11 @@ are welcome!
 
 MIT License - See LICENSE file for details
 
-## 👥 Authors
-
-B.Tech Final Year Project  
-National Institute of Technology Durgapur
-
 ## Acknowledgments
 
-- Inspired by RocksDB, BadgerDB, and Cassandra
+- Inspired by RocksDB, FoundationDB, and Cassandra
 - Based on LSM-tree research by O'Neil et al.
 - Graph concepts from Neo4j and JanusGraph
 
 ---
 
-**Status**: Production-ready (single-node mode)  
-**Language**: Go 1.21+  
-**Total Code**: ~4,380 lines
