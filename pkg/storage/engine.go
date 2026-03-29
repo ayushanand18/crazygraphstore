@@ -95,7 +95,7 @@ func NewEngine(config *Config) (*Engine, error) {
 	}
 
 	// Create compactor (Phase 3)
-	compactorConfig := &compaction.DefaultConfig()
+	compactorConfig := compaction.DefaultConfig()
 	compactorConfig.DataDir = config.DataDir + "/sstables"
 	compactor, err := compaction.NewCompactor(compactorConfig)
 	if err != nil {
