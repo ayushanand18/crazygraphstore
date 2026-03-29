@@ -1,4 +1,3 @@
-
 // Package wal provides Write-Ahead Logging for durability.
 package wal
 
@@ -13,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 )
 
 // WAL represents a Write-Ahead Log for a single write lane.
@@ -27,11 +27,88 @@ type WAL struct {
 	wg         sync.WaitGroup
 	mu         sync.Mutex
 
+	// Direct I/O support
+	useDirectIO   bool
+	alignedBuffer *alignedBuffer
+
 	// Statistics
 	totalWrites  atomic.Uint64
 	totalBytes   atomic.Uint64
 	totalSyncs   atomic.Uint64
 	lastSyncTime atomic.Value // time.Time
+}
+
+// alignedBuffer provides 512-byte aligned memory for Direct I/O operations.
+// Direct I/O requires both the memory address and the I/O size to be aligned
+// to the filesystem block size (typically 512 bytes).
+type alignedBuffer struct {
+	data      []byte // The underlying allocated buffer (larger for alignment)
+	aligned   []byte // The aligned slice within data
+	pos       int    // Current write position
+	blockSize int    // Alignment block size (typically 512)
+}
+
+// newAlignedBuffer creates a new aligned buffer with the given capacity.
+// The actual capacity may be slightly larger to ensure alignment.
+func newAlignedBuffer(capacity, blockSize int) *alignedBuffer {
+	// Allocate extra space for alignment
+	data := make([]byte, capacity+blockSize)
+
+	// Find the aligned start position
+	ptr := uintptr(unsafe.Pointer(&data[0]))
+	alignmentOffset := int((blockSize - int(ptr%uintptr(blockSize))) % blockSize)
+
+	return &alignedBuffer{
+		data:      data,
+		aligned:   data[alignmentOffset : alignmentOffset+capacity],
+		pos:       0,
+		blockSize: blockSize,
+	}
+}
+
+// Write writes data to the aligned buffer.
+func (ab *alignedBuffer) Write(p []byte) (n int, err error) {
+	if ab.pos+len(p) > len(ab.aligned) {
+		return 0, fmt.Errorf("aligned buffer overflow: need %d bytes, have %d", len(p), len(ab.aligned)-ab.pos)
+	}
+	copy(ab.aligned[ab.pos:], p)
+	ab.pos += len(p)
+	return len(p), nil
+}
+
+// Flush writes the buffered data to the file with proper alignment.
+// For Direct I/O, writes must be in multiples of blockSize.
+func (ab *alignedBuffer) Flush(file *os.File) error {
+	if ab.pos == 0 {
+		return nil
+	}
+
+	// Calculate the aligned write size (round up to blockSize)
+	alignedSize := ((ab.pos + ab.blockSize - 1) / ab.blockSize) * ab.blockSize
+
+	// Zero-pad the remaining space in the final block
+	for i := ab.pos; i < alignedSize; i++ {
+		ab.aligned[i] = 0
+	}
+
+	// Write the aligned data
+	_, err := file.Write(ab.aligned[:alignedSize])
+	if err != nil {
+		return err
+	}
+
+	ab.pos = 0
+	return nil
+}
+
+// Reset clears the buffer.
+func (ab *alignedBuffer) Reset() {
+	ab.pos = 0
+}
+
+// Len returns the current data length in the buffer.
+func (ab *alignedBuffer) Len() int {
+	return ab.pos
 }
 
 // EntryType represents the type of WAL entry.
@@ -57,6 +134,7 @@ type Config struct {
 	DataDir      string
 	SyncInterval time.Duration
 	BufferSize   int
+	UseDirectIO  bool // Enable O_DIRECT for bypassing OS page cache
 }
 
 // DefaultConfig returns default WAL configuration.
@@ -65,8 +143,13 @@ func DefaultConfig() *Config {
 		DataDir:      "./data/wal",
 		SyncInterval: 10 * time.Millisecond, // Group commit every 10ms
 		BufferSize:   256 * 1024,            // 256KB buffer
+		UseDirectIO:  false,                 // Disabled by default for compatibility
 	}
 }
+
+// DirectIOBlockSize is the alignment requirement for Direct I/O operations.
+// Most filesystems require 512-byte alignment.
+const DirectIOBlockSize = 512
 
 // NewWAL creates a new Write-Ahead Log for a specific lane.
 func NewWAL(laneID int, config *Config) (*WAL, error) {
@@ -82,10 +165,21 @@ func NewWAL(laneID int, config *Config) (*WAL, error) {
 	// Generate WAL file path
 	path := filepath.Join(config.DataDir, fmt.Sprintf("lane-%d.wal", laneID))
 
-	// Open WAL file (append mode)
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open WAL file: %w", err)
+	var file *os.File
+	var err error
+
+	// Open WAL file (with or without Direct I/O)
+	if config.UseDirectIO {
+		file, err = openWALDirect(path)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Standard file open (append mode)
+		file, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open WAL file: %w", err)
+		}
 	}
 
 	// Get current file size (offset)
@@ -96,13 +190,23 @@ func NewWAL(laneID int, config *Config) (*WAL, error) {
 	}
 
 	wal := &WAL{
-		file:       file,
-		writer:     bufio.NewWriterSize(file, config.BufferSize),
-		path:       path,
-		laneID:     laneID,
-		syncTicker: time.NewTicker(config.SyncInterval),
-		stopCh:     make(chan struct{}),
+		file:        file,
+		path:        path,
+		laneID:      laneID,
+		syncTicker:  time.NewTicker(config.SyncInterval),
+		stopCh:      make(chan struct{}),
+		useDirectIO: config.UseDirectIO,
 	}
+
+	// Setup buffering based on Direct I/O mode
+	if config.UseDirectIO {
+		wal.alignedBuffer = newAlignedBuffer(config.BufferSize, DirectIOBlockSize)
+		wal.writer = nil // Not used with Direct I/O
+	} else {
+		wal.writer = bufio.NewWriterSize(file, config.BufferSize)
+		wal.alignedBuffer = nil
+	}
+
 	wal.offset.Store(uint64(stat.Size()))
 	wal.lastSyncTime.Store(time.Now())
 
@@ -131,9 +235,15 @@ func (w *WAL) Append(entryType EntryType, key string, value []byte) error {
 		return fmt.Errorf("failed to serialize entry: %w", err)
 	}
 
-	// Write to buffer
-	if _, err := w.writer.Write(data); err != nil {
-		return fmt.Errorf("failed to write to WAL: %w", err)
+	// Write to appropriate buffer
+	if w.useDirectIO {
+		if _, err := w.alignedBuffer.Write(data); err != nil {
+			return fmt.Errorf("failed to write to aligned buffer: %w", err)
+		}
+	} else {
+		if _, err := w.writer.Write(data); err != nil {
+			return fmt.Errorf("failed to write to WAL: %w", err)
+		}
 	}
 
 	// Update statistics
@@ -210,9 +320,15 @@ func (w *WAL) Sync() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// Flush buffer
-	if err := w.writer.Flush(); err != nil {
-		return fmt.Errorf("failed to flush buffer: %w", err)
+	// Flush buffer based on mode
+	if w.useDirectIO {
+		if err := w.alignedBuffer.Flush(w.file); err != nil {
+			return fmt.Errorf("failed to flush aligned buffer: %w", err)
+		}
+	} else {
+		if err := w.writer.Flush(); err != nil {
+			return fmt.Errorf("failed to flush buffer: %w", err)
+		}
 	}
 
 	// Sync to disk (fsync)
@@ -362,14 +478,30 @@ func (w *WAL) Truncate() error {
 		return fmt.Errorf("failed to close WAL file: %w", err)
 	}
 
-	// Truncate file
-	file, err := os.OpenFile(w.path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to truncate WAL file: %w", err)
+	var file *os.File
+	var err error
+
+	// Reopen file (with or without Direct I/O)
+	if w.useDirectIO {
+		// For Direct I/O, we need to remove and recreate the file
+		if err := os.Remove(w.path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove WAL file: %w", err)
+		}
+		file, err = openWALDirect(w.path)
+		if err != nil {
+			return err
+		}
+		w.alignedBuffer.Reset()
+	} else {
+		// Standard truncate
+		file, err = os.OpenFile(w.path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to truncate WAL file: %w", err)
+		}
+		w.writer = bufio.NewWriterSize(file, 256*1024)
 	}
 
 	w.file = file
-	w.writer = bufio.NewWriterSize(file, 256*1024)
 	w.offset.Store(0)
 
 	return nil
