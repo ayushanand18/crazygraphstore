@@ -1,4 +1,3 @@
-
 // Package sstable provides SSTable reader implementation.
 package sstable
 
@@ -7,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"os"
+	"sync/atomic"
 
 	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/edsrzf/mmap-go"
@@ -20,6 +20,7 @@ type Reader struct {
 	indexCache  []*IndexEntry
 	bloomFilter *bloom.BloomFilter
 	fileSize    int64
+	closed      atomic.Bool
 }
 
 // NewReader opens an SSTable for reading.
@@ -150,6 +151,10 @@ func (r *Reader) readBloomFilter() error {
 
 // Get retrieves a value by key.
 func (r *Reader) Get(key string) ([]byte, error) {
+	if r.closed.Load() {
+		return nil, fmt.Errorf("reader is closed")
+	}
+
 	// Check bloom filter first
 	if !r.bloomFilter.TestString(key) {
 		return nil, fmt.Errorf("key not found (bloom filter)")
@@ -281,6 +286,10 @@ func (r *Reader) searchBlock(blockData []byte, key string) ([]byte, error) {
 
 // Scan iterates over all entries in the SSTable.
 func (r *Reader) Scan(fn func(key string, value []byte) error) error {
+	if r.closed.Load() {
+		return fmt.Errorf("reader is closed")
+	}
+
 	for _, indexEntry := range r.indexCache {
 		blockData, err := r.readBlock(&indexEntry.Handle)
 		if err != nil {
@@ -341,6 +350,10 @@ func (r *Reader) scanBlock(blockData []byte, fn func(key string, value []byte) e
 
 // Close closes the reader and unmaps the file.
 func (r *Reader) Close() error {
+	if !r.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+
 	var firstErr error
 
 	if r.mmap != nil {

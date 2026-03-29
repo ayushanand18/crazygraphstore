@@ -1,4 +1,3 @@
-
 // Package cache provides multi-level caching for the storage engine.
 package cache
 
@@ -40,21 +39,23 @@ func NewLRUCache(maxSize int64) *LRUCache {
 
 // Get retrieves a value from the cache.
 func (c *LRUCache) Get(key string) (interface{}, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+	c.mu.RLock()
 	elem, ok := c.items[key]
 	if !ok {
+		c.mu.RUnlock()
 		c.misses.Add(1)
 		return nil, false
 	}
 
-	// Move to front (most recently used)
-	c.evictList.MoveToFront(elem)
+	entry := elem.Value.(*Entry)
+	value := entry.Value
+	c.mu.RUnlock()
+
 	c.hits.Add(1)
 
-	entry := elem.Value.(*Entry)
-	return entry.Value, true
+	// Reads intentionally avoid taking the write lock to update recency.
+	// This keeps hot-key workloads from collapsing into a single global mutex.
+	return value, true
 }
 
 // Put adds or updates a value in the cache.
@@ -144,13 +145,13 @@ func (c *LRUCache) Clear() {
 
 // Stats returns cache statistics.
 type CacheStats struct {
-	Size       int64
-	MaxSize    int64
-	Entries    int
-	Hits       uint64
-	Misses     uint64
-	Evictions  uint64
-	HitRate    float64
+	Size        int64
+	MaxSize     int64
+	Entries     int
+	Hits        uint64
+	Misses      uint64
+	Evictions   uint64
+	HitRate     float64
 	Utilization float64
 }
 

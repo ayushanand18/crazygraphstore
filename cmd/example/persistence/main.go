@@ -1,4 +1,3 @@
-
 // Example application demonstrating Phase 2 features (SSTable + Cache)
 package main
 
@@ -104,7 +103,7 @@ func main() {
 	cacheStats := stats.CacheStats
 	fmt.Println("5. Cache statistics after cold reads:")
 	fmt.Printf("   L0 (Hot) Cache: %d entries, %.2f%% hit rate\n",
-		cacheStats.HotStats.Entries, cacheStats.L0HitRate*100)
+		cacheStats.HotTier.Entries, cacheStats.L0HitRate*100)
 	fmt.Printf("   Overall hit rate: %.2f%%\n", cacheStats.OverallHitRate*100)
 	fmt.Println()
 
@@ -130,9 +129,9 @@ func main() {
 	finalCache := finalStats.CacheStats
 	fmt.Println("7. Final cache statistics:")
 	fmt.Printf("   L0 (Hot) Cache: %d entries, %.2f%% hit rate\n",
-		finalCache.HotStats.Entries, finalCache.L0HitRate*100)
+		finalCache.HotTier.Entries, finalCache.L0HitRate*100)
 	fmt.Printf("   Overall hit rate: %.2f%%\n", finalCache.OverallHitRate*100)
-	fmt.Printf("   Cache utilization: %.1f%%\n", finalCache.HotStats.Utilization*100)
+	fmt.Printf("   Cache utilization: %.1f%%\n", finalCache.HotTier.Utilization*100)
 	fmt.Println()
 
 	// Create some edges

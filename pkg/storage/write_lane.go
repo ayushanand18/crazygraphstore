@@ -15,20 +15,20 @@ import (
 // WriteLane represents a single shared-nothing write lane.
 // Each lane has its own memtable and operates independently.
 type WriteLane struct {
-	id             int
-	wal            *wal.WAL // Phase 3: Write-Ahead Log
-	active         *memtable.NodeMemtable
-	activeEdges    *memtable.EdgeMemtable
-	activeAdj      *memtable.AdjacencyMemtable
-	old            []*memtable.NodeMemtable
-	oldEdges       []*memtable.EdgeMemtable
-	oldAdj         []*memtable.AdjacencyMemtable
-	oldMu          sync.RWMutex
-	memtableSize   int64
-	flushCh        chan struct{}
-	stopCh         chan struct{}
-	stopped        atomic.Bool
-	serializer     *graph.Serializer
+	id           int
+	wal          *wal.WAL // Phase 3: Write-Ahead Log
+	active       *memtable.NodeMemtable
+	activeEdges  *memtable.EdgeMemtable
+	activeAdj    *memtable.AdjacencyMemtable
+	old          []*memtable.NodeMemtable
+	oldEdges     []*memtable.EdgeMemtable
+	oldAdj       []*memtable.AdjacencyMemtable
+	oldMu        sync.RWMutex
+	memtableSize int64
+	flushCh      chan struct{}
+	stopCh       chan struct{}
+	stopped      atomic.Bool
+	serializer   *graph.Serializer
 }
 
 // NewWriteLane creates a new write lane.
@@ -40,15 +40,15 @@ func NewWriteLane(id int, memtableSize int64, walConfig *wal.Config) (*WriteLane
 	}
 
 	return &WriteLane{
-		id:             id,
-		wal:            walInstance,
-		active:         memtable.NewNodeMemtable(memtableSize),
-		activeEdges:    memtable.NewEdgeMemtable(memtableSize),
-		activeAdj:      memtable.NewAdjacencyMemtable(memtableSize),
-		memtableSize:   memtableSize,
-		flushCh:        make(chan struct{}, 1),
-		stopCh:         make(chan struct{}),
-		serializer:     graph.NewSerializer(),
+		id:           id,
+		wal:          walInstance,
+		active:       memtable.NewNodeMemtable(memtableSize),
+		activeEdges:  memtable.NewEdgeMemtable(memtableSize),
+		activeAdj:    memtable.NewAdjacencyMemtable(memtableSize),
+		memtableSize: memtableSize,
+		flushCh:      make(chan struct{}, 1),
+		stopCh:       make(chan struct{}),
+		serializer:   graph.NewSerializer(),
 	}, nil
 }
 
@@ -70,7 +70,10 @@ func (wl *WriteLane) WriteNode(ctx context.Context, node *graph.Node) error {
 
 	// Write to active memtable (NO LOCK!)
 	if err := wl.active.PutNode(node); err != nil {
-		return fmt.Errorf("failed to write node: %w", err)
+		wl.rotateMemtable()
+		if retryErr := wl.active.PutNode(node); retryErr != nil {
+			return fmt.Errorf("failed to write node: %w", retryErr)
+		}
 	}
 
 	// Check if memtable should be rotated
@@ -99,12 +102,25 @@ func (wl *WriteLane) WriteEdge(ctx context.Context, edge *graph.Edge) error {
 
 	// Write edge
 	if err := wl.activeEdges.PutEdge(edge); err != nil {
-		return fmt.Errorf("failed to write edge: %w", err)
+		wl.rotateMemtable()
+		if retryErr := wl.activeEdges.PutEdge(edge); retryErr != nil {
+			return fmt.Errorf("failed to write edge: %w", retryErr)
+		}
 	}
 
 	// Update adjacency lists
 	if err := wl.activeAdj.AddOutgoingEdge(edge.FromNodeID, edge.ID); err != nil {
-		return fmt.Errorf("failed to update outgoing adjacency: %w", err)
+		wl.rotateMemtable()
+		if retryErr := wl.activeEdges.PutEdge(edge); retryErr != nil {
+			return fmt.Errorf("failed to rewrite edge after rotation: %w", retryErr)
+		}
+		if retryErr := wl.activeAdj.AddOutgoingEdge(edge.FromNodeID, edge.ID); retryErr != nil {
+			return fmt.Errorf("failed to update outgoing adjacency: %w", retryErr)
+		}
+		if retryErr := wl.activeAdj.AddIncomingEdge(edge.ToNodeID, edge.ID); retryErr != nil {
+			return fmt.Errorf("failed to update incoming adjacency: %w", retryErr)
+		}
+		return nil
 	}
 	if err := wl.activeAdj.AddIncomingEdge(edge.ToNodeID, edge.ID); err != nil {
 		return fmt.Errorf("failed to update incoming adjacency: %w", err)
@@ -166,16 +182,16 @@ func (wl *WriteLane) ReadEdge(ctx context.Context, edgeID string) (*graph.Edge, 
 func (wl *WriteLane) GetOutgoingEdges(ctx context.Context, nodeID string) []string {
 	// Check active first
 	edges := wl.activeAdj.GetOutgoingEdges(nodeID)
-	
+
 	// Check old memtables
 	wl.oldMu.RLock()
 	defer wl.oldMu.RUnlock()
-	
+
 	for i := len(wl.oldAdj) - 1; i >= 0; i-- {
 		oldEdges := wl.oldAdj[i].GetOutgoingEdges(nodeID)
 		edges = append(edges, oldEdges...)
 	}
-	
+
 	return edges
 }
 
@@ -183,16 +199,16 @@ func (wl *WriteLane) GetOutgoingEdges(ctx context.Context, nodeID string) []stri
 func (wl *WriteLane) GetIncomingEdges(ctx context.Context, nodeID string) []string {
 	// Check active first
 	edges := wl.activeAdj.GetIncomingEdges(nodeID)
-	
+
 	// Check old memtables
 	wl.oldMu.RLock()
 	defer wl.oldMu.RUnlock()
-	
+
 	for i := len(wl.oldAdj) - 1; i >= 0; i-- {
 		oldEdges := wl.oldAdj[i].GetIncomingEdges(nodeID)
 		edges = append(edges, oldEdges...)
 	}
-	
+
 	return edges
 }
 
@@ -229,7 +245,7 @@ func (wl *WriteLane) rotateMemtable() {
 func (wl *WriteLane) GetOldMemtables() []*memtable.NodeMemtable {
 	wl.oldMu.RLock()
 	defer wl.oldMu.RUnlock()
-	
+
 	// Return a copy of the slice
 	old := make([]*memtable.NodeMemtable, len(wl.old))
 	copy(old, wl.old)
@@ -253,7 +269,7 @@ func (wl *WriteLane) RemoveOldMemtable(mt *memtable.NodeMemtable) {
 func (wl *WriteLane) Stop() {
 	if wl.stopped.CompareAndSwap(false, true) {
 		close(wl.stopCh)
-		
+
 		// Close WAL (Phase 3)
 		if wl.wal != nil {
 			wl.wal.Close()
@@ -325,12 +341,12 @@ func (wl *WriteLane) Recover() error {
 			if err != nil {
 				return fmt.Errorf("failed to deserialize edge: %w", err)
 			}
-			
+
 			// Restore edge
 			if err := wl.activeEdges.PutEdge(edge); err != nil {
 				return err
 			}
-			
+
 			// Restore adjacency lists
 			wl.activeAdj.AddOutgoingEdge(edge.FromNodeID, edge.ID)
 			wl.activeAdj.AddIncomingEdge(edge.ToNodeID, edge.ID)
