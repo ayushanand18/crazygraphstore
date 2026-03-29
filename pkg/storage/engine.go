@@ -237,7 +237,7 @@ func (e *Engine) GetNode(ctx context.Context, nodeID string) (*graph.Node, error
 
 	// Check cache first (Phase 2)
 	if node, ok := e.cache.GetNode(nodeID); ok {
-		return node, nil
+		return node.Clone(), nil
 	}
 
 	// Try the primary lane first
@@ -245,8 +245,9 @@ func (e *Engine) GetNode(ctx context.Context, nodeID string) (*graph.Node, error
 	node, err := lane.ReadNode(ctx, nodeID)
 	if err == nil {
 		// Cache the node (Phase 2)
-		e.cache.PutNodeByID(node)
-		return node, nil
+		cachedNode := node.Clone()
+		e.cache.PutNodeByID(cachedNode)
+		return cachedNode.Clone(), nil
 	}
 
 	// Node might be in a different lane due to hash collisions
@@ -258,8 +259,9 @@ func (e *Engine) GetNode(ctx context.Context, nodeID string) (*graph.Node, error
 		node, err := l.ReadNode(ctx, nodeID)
 		if err == nil {
 			// Cache the node (Phase 2)
-			e.cache.PutNodeByID(node)
-			return node, nil
+			cachedNode := node.Clone()
+			e.cache.PutNodeByID(cachedNode)
+			return cachedNode.Clone(), nil
 		}
 	}
 
@@ -277,6 +279,8 @@ func (e *Engine) UpdateNode(ctx context.Context, nodeID string, properties map[s
 	if err != nil {
 		return fmt.Errorf("failed to get node: %w", err)
 	}
+
+	node = node.Clone()
 
 	// Update properties
 	for key, value := range properties {
@@ -332,7 +336,7 @@ func (e *Engine) GetEdge(ctx context.Context, edgeID string) (*graph.Edge, error
 
 	// Check cache first (Phase 2)
 	if edge, ok := e.cache.GetEdge(edgeID); ok {
-		return edge, nil
+		return edge.Clone(), nil
 	}
 
 	// Try the primary lane first
@@ -340,8 +344,9 @@ func (e *Engine) GetEdge(ctx context.Context, edgeID string) (*graph.Edge, error
 	edge, err := lane.ReadEdge(ctx, edgeID)
 	if err == nil {
 		// Cache the edge (Phase 2)
-		e.cache.PutEdgeByID(edge)
-		return edge, nil
+		cachedEdge := edge.Clone()
+		e.cache.PutEdgeByID(cachedEdge)
+		return cachedEdge.Clone(), nil
 	}
 
 	// Check all lanes as fallback
@@ -352,8 +357,9 @@ func (e *Engine) GetEdge(ctx context.Context, edgeID string) (*graph.Edge, error
 		edge, err := l.ReadEdge(ctx, edgeID)
 		if err == nil {
 			// Cache the edge (Phase 2)
-			e.cache.PutEdgeByID(edge)
-			return edge, nil
+			cachedEdge := edge.Clone()
+			e.cache.PutEdgeByID(cachedEdge)
+			return cachedEdge.Clone(), nil
 		}
 	}
 

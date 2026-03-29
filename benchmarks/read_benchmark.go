@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -234,14 +235,14 @@ func (rb *ReadBenchmark) warmupCache() error {
 			for i := 0; i < opsPerWorker; i++ {
 				var err error
 
-				if rb.engine.GetWorkloadGenerator().rng.Float64() < 0.7 {
+				if rb.engine.GetWorkloadGenerator().Float64() < 0.7 {
 					// Read node
-					nodeID := rb.nodeIDs[rb.engine.GetWorkloadGenerator().rng.Intn(len(rb.nodeIDs))]
+					nodeID := rb.nodeIDs[rb.engine.GetWorkloadGenerator().Intn(len(rb.nodeIDs))]
 					_, err = rb.engine.GetEngine().GetNode(ctx, nodeID)
 				} else {
 					// Read edge
 					if len(rb.edgeIDs) > 0 {
-						edgeID := rb.edgeIDs[rb.engine.GetWorkloadGenerator().rng.Intn(len(rb.edgeIDs))]
+						edgeID := rb.edgeIDs[rb.engine.GetWorkloadGenerator().Intn(len(rb.edgeIDs))]
 						_, err = rb.engine.GetEngine().GetEdge(ctx, edgeID)
 					}
 				}
@@ -318,7 +319,7 @@ func (rb *ReadBenchmark) runReadTest() error {
 				start := time.Now()
 
 				var err error
-				if rb.engine.GetWorkloadGenerator().rng.Float64() < 0.7 {
+				if rb.engine.GetWorkloadGenerator().Float64() < 0.7 {
 					err = rb.performNodeRead(ctx, workerID, i)
 				} else {
 					err = rb.performEdgeRead(ctx, workerID, i)
@@ -355,24 +356,24 @@ func (rb *ReadBenchmark) performNodeRead(ctx context.Context, workerID, opIndex 
 	var nodeID string
 	switch rb.accessPattern {
 	case AccessPatternRandom:
-		nodeID = rb.nodeIDs[rb.engine.GetWorkloadGenerator().rng.Intn(len(rb.nodeIDs))]
+		nodeID = rb.nodeIDs[rb.engine.GetWorkloadGenerator().Intn(len(rb.nodeIDs))]
 	case AccessPatternSequential:
 		index := (workerID*1000 + opIndex) % len(rb.nodeIDs)
 		nodeID = rb.nodeIDs[index]
 	case AccessPatternHotspot:
 		// 80% of reads go to 20% of data
-		if rb.engine.GetWorkloadGenerator().rng.Float64() < 0.8 {
+		if rb.engine.GetWorkloadGenerator().Float64() < 0.8 {
 			hotspotSize := len(rb.nodeIDs) / 5
 			if hotspotSize == 0 {
 				hotspotSize = 1
 			}
-			nodeID = rb.nodeIDs[rb.engine.GetWorkloadGenerator().rng.Intn(hotspotSize)]
+			nodeID = rb.nodeIDs[rb.engine.GetWorkloadGenerator().Intn(hotspotSize)]
 		} else {
 			hotspotSize := len(rb.nodeIDs) / 5
 			if hotspotSize == 0 {
 				hotspotSize = 1
 			}
-			nodeID = rb.nodeIDs[hotspotSize+rb.engine.GetWorkloadGenerator().rng.Intn(len(rb.nodeIDs)-hotspotSize)]
+			nodeID = rb.nodeIDs[hotspotSize+rb.engine.GetWorkloadGenerator().Intn(len(rb.nodeIDs)-hotspotSize)]
 		}
 	case AccessPatternZipfian:
 		nodeID = rb.zipfianSelect(rb.nodeIDs)
@@ -391,23 +392,23 @@ func (rb *ReadBenchmark) performEdgeRead(ctx context.Context, workerID, opIndex 
 	var edgeID string
 	switch rb.accessPattern {
 	case AccessPatternRandom:
-		edgeID = rb.edgeIDs[rb.engine.GetWorkloadGenerator().rng.Intn(len(rb.edgeIDs))]
+		edgeID = rb.edgeIDs[rb.engine.GetWorkloadGenerator().Intn(len(rb.edgeIDs))]
 	case AccessPatternSequential:
 		index := (workerID*1000 + opIndex) % len(rb.edgeIDs)
 		edgeID = rb.edgeIDs[index]
 	case AccessPatternHotspot:
-		if rb.engine.GetWorkloadGenerator().rng.Float64() < 0.8 {
+		if rb.engine.GetWorkloadGenerator().Float64() < 0.8 {
 			hotspotSize := len(rb.edgeIDs) / 5
 			if hotspotSize == 0 {
 				hotspotSize = 1
 			}
-			edgeID = rb.edgeIDs[rb.engine.GetWorkloadGenerator().rng.Intn(hotspotSize)]
+			edgeID = rb.edgeIDs[rb.engine.GetWorkloadGenerator().Intn(hotspotSize)]
 		} else {
 			hotspotSize := len(rb.edgeIDs) / 5
 			if hotspotSize == 0 {
 				hotspotSize = 1
 			}
-			edgeID = rb.edgeIDs[hotspotSize+rb.engine.GetWorkloadGenerator().rng.Intn(len(rb.edgeIDs)-hotspotSize)]
+			edgeID = rb.edgeIDs[hotspotSize+rb.engine.GetWorkloadGenerator().Intn(len(rb.edgeIDs)-hotspotSize)]
 		}
 	case AccessPatternZipfian:
 		edgeID = rb.zipfianSelect(rb.edgeIDs)
@@ -423,29 +424,21 @@ func (rb *ReadBenchmark) zipfianSelect(items []string) string {
 		return ""
 	}
 
-	// Simple Zipfian approximation using exponential distribution
-	rng := rb.engine.GetWorkloadGenerator().rng
-	theta := 1.0 // Zipfian parameter
+	// Bias towards lower indexes to approximate Zipfian hot keys while always staying in range.
+	u := rb.engine.GetWorkloadGenerator().Float64()
+	if u <= 0 {
+		u = math.SmallestNonzeroFloat64
+	}
 
-	for {
-		u := rng.Float64()
-		k := int(float64(len(items)) * pow(u, -1.0/theta))
-		if k < len(items) {
-			return items[k]
-		}
+	const exponent = 2.2
+	index := int(float64(len(items)-1) * math.Pow(u, exponent))
+	if index < 0 {
+		index = 0
+	} else if index >= len(items) {
+		index = len(items) - 1
 	}
-}
 
-// pow calculates x^y for Zipfian distribution.
-func pow(x, y float64) float64 {
-	if x == 0 && y > 0 {
-		return 0
-	}
-	result := 1.0
-	for i := 0; i < int(y); i++ {
-		result *= x
-	}
-	return result
+	return items[index]
 }
 
 // TraversalBenchmark performs graph traversal operations.
@@ -549,7 +542,7 @@ func (tb *TraversalBenchmark) prePopulateConnectedData() error {
 
 		// Add some random connections
 		if i > 0 {
-			randomTarget := tb.engine.GetWorkloadGenerator().rng.Intn(i)
+			randomTarget := tb.engine.GetWorkloadGenerator().Intn(i)
 			edgeID := fmt.Sprintf("traversal-edge-random-%d", i)
 			edge := tb.engine.GetWorkloadGenerator().GenerateEdge(edgeID, tb.nodeIDs[i], tb.nodeIDs[randomTarget])
 
@@ -615,7 +608,7 @@ func (tb *TraversalBenchmark) runTraversalTest() error {
 				start := time.Now()
 
 				// Pick a random starting node
-				nodeID := tb.nodeIDs[tb.engine.GetWorkloadGenerator().rng.Intn(len(tb.nodeIDs))]
+				nodeID := tb.nodeIDs[tb.engine.GetWorkloadGenerator().Intn(len(tb.nodeIDs))]
 
 				// Perform neighbor traversal
 				_, err := tb.engine.GetEngine().GetNeighbors(ctx, nodeID, 0) // DirectionOut

@@ -206,6 +206,22 @@ func NewWorkloadGenerator(seed int64) *WorkloadGenerator {
 	}
 }
 
+// Intn returns a random int in [0,n) using synchronized access to rng.
+func (wg *WorkloadGenerator) Intn(n int) int {
+	wg.mu.Lock()
+	defer wg.mu.Unlock()
+
+	return wg.rng.Intn(n)
+}
+
+// Float64 returns a random float64 in [0.0,1.0) using synchronized access to rng.
+func (wg *WorkloadGenerator) Float64() float64 {
+	wg.mu.Lock()
+	defer wg.mu.Unlock()
+
+	return wg.rng.Float64()
+}
+
 // GenerateNode creates a realistic test node.
 func (wg *WorkloadGenerator) GenerateNode(id string) *graph.Node {
 	wg.mu.Lock()

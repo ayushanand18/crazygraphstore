@@ -176,11 +176,11 @@ func (mb *MixedBenchmark) prePopulateInitialData() error {
 				// Create edges occasionally
 				if i > 0 && i%3 == 0 && len(mb.nodeIDs) > 1 {
 					edgeID := fmt.Sprintf("mixed-edge-%d-%d", workerID, i)
-					fromNodeID := mb.nodeIDs[mb.engine.GetWorkloadGenerator().rng.Intn(len(mb.nodeIDs))]
+					fromNodeID := mb.nodeIDs[mb.engine.GetWorkloadGenerator().Intn(len(mb.nodeIDs))]
 
 					var toNodeID string
 					for {
-						candidate := mb.nodeIDs[mb.engine.GetWorkloadGenerator().rng.Intn(len(mb.nodeIDs))]
+						candidate := mb.nodeIDs[mb.engine.GetWorkloadGenerator().Intn(len(mb.nodeIDs))]
 						if candidate != fromNodeID {
 							toNodeID = candidate
 							break
@@ -376,10 +376,10 @@ func (mb *MixedBenchmark) performCreateEdge(ctx context.Context, workerID, opInd
 	edgeID := fmt.Sprintf("runtime-edge-%d-%d-%d", workerID, opIndex, time.Now().UnixNano())
 
 	// Select two random nodes
-	fromNodeID := mb.nodeIDs[mb.engine.GetWorkloadGenerator().rng.Intn(len(mb.nodeIDs))]
+	fromNodeID := mb.nodeIDs[mb.engine.GetWorkloadGenerator().Intn(len(mb.nodeIDs))]
 	var toNodeID string
 	for {
-		candidate := mb.nodeIDs[mb.engine.GetWorkloadGenerator().rng.Intn(len(mb.nodeIDs))]
+		candidate := mb.nodeIDs[mb.engine.GetWorkloadGenerator().Intn(len(mb.nodeIDs))]
 		if candidate != fromNodeID {
 			toNodeID = candidate
 			break
@@ -402,7 +402,7 @@ func (mb *MixedBenchmark) performReadNode(ctx context.Context) error {
 		return fmt.Errorf("no nodes available for reading")
 	}
 
-	nodeID := mb.nodeIDs[mb.engine.GetWorkloadGenerator().rng.Intn(len(mb.nodeIDs))]
+	nodeID := mb.nodeIDs[mb.engine.GetWorkloadGenerator().Intn(len(mb.nodeIDs))]
 	_, err := mb.engine.GetEngine().GetNode(ctx, nodeID)
 	return err
 }
@@ -413,7 +413,7 @@ func (mb *MixedBenchmark) performReadEdge(ctx context.Context) error {
 		return fmt.Errorf("no edges available for reading")
 	}
 
-	edgeID := mb.edgeIDs[mb.engine.GetWorkloadGenerator().rng.Intn(len(mb.edgeIDs))]
+	edgeID := mb.edgeIDs[mb.engine.GetWorkloadGenerator().Intn(len(mb.edgeIDs))]
 	_, err := mb.engine.GetEngine().GetEdge(ctx, edgeID)
 	return err
 }
@@ -424,7 +424,7 @@ func (mb *MixedBenchmark) performUpdateNode(ctx context.Context) error {
 		return fmt.Errorf("no nodes available for updating")
 	}
 
-	nodeID := mb.nodeIDs[mb.engine.GetWorkloadGenerator().rng.Intn(len(mb.nodeIDs))]
+	nodeID := mb.nodeIDs[mb.engine.GetWorkloadGenerator().Intn(len(mb.nodeIDs))]
 
 	// Update with random properties
 	updates := make(map[string]interface{})
@@ -446,7 +446,7 @@ func (mb *MixedBenchmark) performTraversal(ctx context.Context) error {
 		return fmt.Errorf("no nodes available for traversal")
 	}
 
-	nodeID := mb.nodeIDs[mb.engine.GetWorkloadGenerator().rng.Intn(len(mb.nodeIDs))]
+	nodeID := mb.nodeIDs[mb.engine.GetWorkloadGenerator().Intn(len(mb.nodeIDs))]
 	_, err := mb.engine.GetEngine().GetNeighbors(ctx, nodeID, 0) // DirectionOut
 	return err
 }
@@ -631,7 +631,7 @@ func (csb *ConcurrencyStressBenchmark) runStressTest() error {
 				start := time.Now()
 
 				var err error
-				if csb.engine.GetWorkloadGenerator().rng.Float64() < 0.7 {
+				if csb.engine.GetWorkloadGenerator().Float64() < 0.7 {
 					// Read operation (70%)
 					err = csb.performStressRead(ctx)
 				} else {
@@ -665,16 +665,16 @@ func (csb *ConcurrencyStressBenchmark) runStressTest() error {
 func (csb *ConcurrencyStressBenchmark) performStressRead(ctx context.Context) error {
 	var nodeID string
 
-	if csb.engine.GetWorkloadGenerator().rng.Float64() < csb.config.HotspotRatio {
+	if csb.engine.GetWorkloadGenerator().Float64() < csb.config.HotspotRatio {
 		// Access hotspot (first 10% of nodes)
 		hotspotSize := len(csb.nodeIDs) / 10
 		if hotspotSize == 0 {
 			hotspotSize = 1
 		}
-		nodeID = csb.nodeIDs[csb.engine.GetWorkloadGenerator().rng.Intn(hotspotSize)]
+		nodeID = csb.nodeIDs[csb.engine.GetWorkloadGenerator().Intn(hotspotSize)]
 	} else {
 		// Access random node
-		nodeID = csb.nodeIDs[csb.engine.GetWorkloadGenerator().rng.Intn(len(csb.nodeIDs))]
+		nodeID = csb.nodeIDs[csb.engine.GetWorkloadGenerator().Intn(len(csb.nodeIDs))]
 	}
 
 	_, err := csb.engine.GetEngine().GetNode(ctx, nodeID)
@@ -685,16 +685,16 @@ func (csb *ConcurrencyStressBenchmark) performStressRead(ctx context.Context) er
 func (csb *ConcurrencyStressBenchmark) performStressWrite(ctx context.Context, workerID int) error {
 	var nodeID string
 
-	if csb.engine.GetWorkloadGenerator().rng.Float64() < csb.config.HotspotRatio {
+	if csb.engine.GetWorkloadGenerator().Float64() < csb.config.HotspotRatio {
 		// Update hotspot (first 10% of nodes)
 		hotspotSize := len(csb.nodeIDs) / 10
 		if hotspotSize == 0 {
 			hotspotSize = 1
 		}
-		nodeID = csb.nodeIDs[csb.engine.GetWorkloadGenerator().rng.Intn(hotspotSize)]
+		nodeID = csb.nodeIDs[csb.engine.GetWorkloadGenerator().Intn(hotspotSize)]
 	} else {
 		// Update random node
-		nodeID = csb.nodeIDs[csb.engine.GetWorkloadGenerator().rng.Intn(len(csb.nodeIDs))]
+		nodeID = csb.nodeIDs[csb.engine.GetWorkloadGenerator().Intn(len(csb.nodeIDs))]
 	}
 
 	// Create contention by updating the same properties

@@ -401,7 +401,7 @@ func (bwb *BatchWriteBenchmark) runBatchWriteTest() error {
 
 // shouldCreateNode determines if the next operation should be a node creation.
 func (bwb *BatchWriteBenchmark) shouldCreateNode() bool {
-	return bwb.engine.GetWorkloadGenerator().rng.Float64() < bwb.config.NodeRatio
+	return bwb.engine.GetWorkloadGenerator().Float64() < bwb.config.NodeRatio
 }
 
 // createNode creates a node for the batch benchmark.

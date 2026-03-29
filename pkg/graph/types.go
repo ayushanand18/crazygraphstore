@@ -6,6 +6,26 @@ import (
 	"time"
 )
 
+func cloneProperties(properties map[string]interface{}) map[string]interface{} {
+	if properties == nil {
+		return nil
+	}
+
+	cloned := make(map[string]interface{}, len(properties))
+	for key, value := range properties {
+		switch typedValue := value.(type) {
+		case []byte:
+			copied := make([]byte, len(typedValue))
+			copy(copied, typedValue)
+			cloned[key] = copied
+		default:
+			cloned[key] = value
+		}
+	}
+
+	return cloned
+}
+
 // Node represents a graph vertex with labels and properties.
 type Node struct {
 	ID         string                 // Unique identifier
@@ -51,6 +71,25 @@ func (n *Node) SetProperty(key string, value interface{}) {
 	n.UpdatedAt = time.Now()
 }
 
+// Clone returns a deep copy of the node so callers can mutate it safely.
+func (n *Node) Clone() *Node {
+	if n == nil {
+		return nil
+	}
+
+	labels := make([]string, len(n.Labels))
+	copy(labels, n.Labels)
+
+	return &Node{
+		ID:         n.ID,
+		Labels:     labels,
+		Properties: cloneProperties(n.Properties),
+		Version:    n.Version,
+		CreatedAt:  n.CreatedAt,
+		UpdatedAt:  n.UpdatedAt,
+	}
+}
+
 // Edge represents a directed relationship between two nodes with properties.
 type Edge struct {
 	ID         string                 // Unique edge identifier
@@ -85,13 +124,31 @@ func (e *Edge) SetProperty(key string, value interface{}) {
 	e.UpdatedAt = time.Now()
 }
 
+// Clone returns a deep copy of the edge so callers can mutate it safely.
+func (e *Edge) Clone() *Edge {
+	if e == nil {
+		return nil
+	}
+
+	return &Edge{
+		ID:         e.ID,
+		FromNodeID: e.FromNodeID,
+		ToNodeID:   e.ToNodeID,
+		Type:       e.Type,
+		Properties: cloneProperties(e.Properties),
+		Version:    e.Version,
+		CreatedAt:  e.CreatedAt,
+		UpdatedAt:  e.UpdatedAt,
+	}
+}
+
 // Direction represents the direction of edge traversal.
 type Direction int
 
 const (
 	DirectionOut  Direction = iota // Outgoing edges
-	DirectionIn                     // Incoming edges
-	DirectionBoth                   // Both directions
+	DirectionIn                    // Incoming edges
+	DirectionBoth                  // Both directions
 )
 
 // String returns a string representation of the direction.
