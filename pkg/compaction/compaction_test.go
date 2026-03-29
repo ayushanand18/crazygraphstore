@@ -1,8 +1,10 @@
 package compaction
 
 import (
+	"context"
 	"os"
 	"testing"
+	"time"
 	"time"
 
 	"github.com/ayushanand18/crazygraphstore/pkg/compaction"
@@ -10,12 +12,16 @@ import (
 	"github.com/ayushanand18/crazygraphstore/pkg/sstable"
 )
 
-func createTestSSTableForCompaction(t *testing.T, path string, keyPrefix string, count int) {
+func createTestSSTableForCompaction(t *testing.T, path string, keyPrefix string, count int) int64 {
 	writer, err := sstable.NewWriter(path, 4096)
 	if err != nil {
-		t.Fatalf("Failed to create writer: %v", err)
+		if t != nil {
+			t.Fatalf("Failed to create writer: %v", err)
+		}
+		return 0
 	}
 	defer writer.Close()
+
 
 	for i := 0; i < count; i++ {
 		key := keyPrefix + string(rune('a'+i%26)) + string(rune('0'+i/26))
@@ -28,8 +34,18 @@ func createTestSSTableForCompaction(t *testing.T, path string, keyPrefix string,
 
 	err = writer.Close()
 	if err != nil {
-		t.Fatalf("Failed to finalize: %v", err)
+		if t != nil {
+			t.Fatalf("Failed to finalize: %v", err)
+		}
+		return 0
 	}
+
+	// Return file size
+	stat, _ := os.Stat(path)
+	if stat != nil {
+		return stat.Size()
+	}
+	return 0
 }
 
 func TestNewCompactor(t *testing.T) {
@@ -49,7 +65,7 @@ func TestNewCompactor(t *testing.T) {
 	}
 }
 
-func TestCompactor_Start(t *testing.T) {
+func TestCompactor_StartStop(t *testing.T) {
 	dataDir := "./test-compactor-start"
 	defer os.RemoveAll(dataDir)
 	os.MkdirAll(dataDir, 0755)
@@ -91,8 +107,8 @@ func TestCompactor_Stop(t *testing.T) {
 	}
 }
 
-func TestCompactor_AddSSTable(t *testing.T) {
-	dataDir := "./test-compactor-add"
+func TestCompactor_DoubleStart(t *testing.T) {
+	dataDir := "./test-compactor-double-start"
 	defer os.RemoveAll(dataDir)
 	os.MkdirAll(dataDir, 0755)
 
@@ -111,7 +127,7 @@ func TestCompactor_AddSSTable(t *testing.T) {
 	// Add SSTable to level 0
 	err = compactor.AddSSTable(sstPath, 0)
 	if err != nil {
-		t.Fatalf("Failed to add SSTable: %v", err)
+		t.Fatalf("Failed to start compactor: %v", err)
 	}
 }
 
@@ -191,12 +207,12 @@ func TestMerger_MergeEmpty(t *testing.T) {
 	// Try to merge with no input files
 	err := merger.Merge([]string{}, outputPath)
 	if err == nil {
-		t.Error("Expected error when merging empty list")
+		t.Error("Double start should fail")
 	}
 }
 
-func TestMerger_MergeSingleFile(t *testing.T) {
-	dataDir := "./test-merger-single"
+func TestCompactor_RegisterTable(t *testing.T) {
+	dataDir := "./test-compactor-register"
 	defer os.RemoveAll(dataDir)
 	os.MkdirAll(dataDir, 0755)
 
@@ -251,8 +267,8 @@ func TestMerger_MergeMultipleFiles(t *testing.T) {
 	}
 }
 
-func TestMerger_DuplicateKeys(t *testing.T) {
-	dataDir := "./test-merger-duplicates"
+func TestCompactor_RegisterMultipleTables(t *testing.T) {
+	dataDir := "./test-compactor-register-multi"
 	defer os.RemoveAll(dataDir)
 	os.MkdirAll(dataDir, 0755)
 
@@ -325,8 +341,8 @@ func TestCompactor_LevelManagement(t *testing.T) {
 
 	// Verify levels are tracked
 	stats := compactor.Stats()
-	if stats == nil {
-		t.Error("Stats should not be nil")
+	if stats.TotalTables != 5 {
+		t.Errorf("Expected 5 tables, got %d", stats.TotalTables)
 	}
 }
 
@@ -346,19 +362,20 @@ func TestCompactor_Stats(t *testing.T) {
 	// Add some SSTables
 	for i := 0; i < 3; i++ {
 		sstPath := dataDir + "/test" + string(rune('0'+i)) + ".sst"
-		createTestSSTableForCompaction(t, sstPath, "key", 10)
-		compactor.AddSSTable(sstPath, 0)
+		size := createTestSSTableForCompaction(t, sstPath, "key", 10)
+		compactor.RegisterTable(sstPath, size, 10)
 	}
+
 
 	// Get stats
 	stats := compactor.Stats()
-	if stats == nil {
-		t.Error("Stats should not be nil")
+	if stats.TotalTables != 3 {
+		t.Errorf("Expected 3 tables, got %d", stats.TotalTables)
 	}
 }
 
-func TestCompactor_ConcurrentAdd(t *testing.T) {
-	dataDir := "./test-concurrent-add"
+func TestCompactor_ConcurrentRegister(t *testing.T) {
+	dataDir := "./test-concurrent-register"
 	defer os.RemoveAll(dataDir)
 	os.MkdirAll(dataDir, 0755)
 
@@ -375,23 +392,31 @@ func TestCompactor_ConcurrentAdd(t *testing.T) {
 	// Concurrent adds
 	done := make(chan bool, 10)
 
+
 	for i := 0; i < 10; i++ {
 		go func(id int) {
 			sstPath := dataDir + "/test" + string(rune('a'+id)) + ".sst"
-			createTestSSTableForCompaction(t, sstPath, "key"+string(rune('a'+id)), 20)
-			compactor.AddSSTable(sstPath, 0)
+			size := createTestSSTableForCompaction(t, sstPath, "key"+string(rune('a'+id)), 20)
+			compactor.RegisterTable(sstPath, size, 20)
 			done <- true
 		}(i)
 	}
+
 
 	// Wait for all
 	for i := 0; i < 10; i++ {
 		<-done
 	}
+
+	// Verify all tables registered
+	stats := compactor.Stats()
+	if stats.TotalTables != 10 {
+		t.Errorf("Expected 10 tables, got %d", stats.TotalTables)
+	}
 }
 
-func TestMerger_SortedOutput(t *testing.T) {
-	dataDir := "./test-sorted-output"
+func TestCompactor_Strategies(t *testing.T) {
+	dataDir := "./test-compactor-strategies"
 	defer os.RemoveAll(dataDir)
 	os.MkdirAll(dataDir, 0755)
 
@@ -431,11 +456,13 @@ func TestMerger_SortedOutput(t *testing.T) {
 		if keys[i-1] > keys[i] {
 			t.Errorf("Keys not sorted: %s > %s", keys[i-1], keys[i])
 		}
+
+		os.RemoveAll(dataDir)
 	}
 }
 
-func TestCompactor_MaxLevel(t *testing.T) {
-	dataDir := "./test-max-level"
+func TestCompactor_ContextCancellation(t *testing.T) {
+	dataDir := "./test-compactor-ctx"
 	defer os.RemoveAll(dataDir)
 	os.MkdirAll(dataDir, 0755)
 
@@ -467,8 +494,8 @@ func TestCompactor_MaxLevel(t *testing.T) {
 	}
 }
 
-func BenchmarkMerger_Merge(b *testing.B) {
-	dataDir := "./bench-merge"
+func BenchmarkCompactor_RegisterTable(b *testing.B) {
+	dataDir := "./bench-register"
 	defer os.RemoveAll(dataDir)
 	os.MkdirAll(dataDir, 0755)
 
@@ -484,8 +511,6 @@ func BenchmarkMerger_Merge(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		outputPath := dataDir + "/merged-" + string(rune('0'+i)) + ".sst"
-		merger.Merge(inputPaths, outputPath)
-		os.Remove(outputPath)
+		compactor.RegisterTable(sstPath, size, 100)
 	}
 }

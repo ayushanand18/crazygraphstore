@@ -1,7 +1,10 @@
 package cache
 
 import (
+	"sync"
 	"testing"
+
+	"github.com/ayushanand18/crazygraphstore/pkg/graph"
 
 	"github.com/ayushanand18/crazygraphstore/pkg/graph"
 )
@@ -29,7 +32,7 @@ func TestMultiLevelCache_PutGetHotTier(t *testing.T) {
 	// Get from hot tier
 	value, found := cache.GetNode("hot-key")
 	if !found {
-		t.Error("Hot key not found")
+		t.Error("Node not found")
 	}
 
 	if value.ID != "hot-key" {
@@ -53,7 +56,7 @@ func TestMultiLevelCache_PutGetConnectionTier(t *testing.T) {
 	// Get from connection tier
 	value, found := cache.GetEdge("conn-key")
 	if !found {
-		t.Error("Connection key not found")
+		t.Error("Edge not found")
 	}
 
 	if value.ID != "conn-key" {
@@ -77,7 +80,7 @@ func TestMultiLevelCache_PutGetDataTier(t *testing.T) {
 	// Get from data tier
 	value, found := cache.GetEdge("data-key")
 	if !found {
-		t.Error("Data key not found")
+		t.Error("Connection list not found")
 	}
 
 	if value.ID != "data-key" {
@@ -96,7 +99,7 @@ func TestMultiLevelCache_GetNotFound(t *testing.T) {
 
 	_, found := cache.GetNode("nonexistent")
 	if found {
-		t.Error("Should not find non-existent key")
+		t.Error("Should not find non-existent node")
 	}
 }
 
@@ -186,21 +189,21 @@ func TestMultiLevelCache_Delete(t *testing.T) {
 	cache.InvalidateNodeByKey("hot-key")
 	_, found := cache.GetNode("hot-key")
 	if found {
-		t.Error("hot-key should be deleted")
+		t.Error("Node should be invalidated")
 	}
 
 	// Delete from connection tier
 	cache.InvalidateEdgeByKey("conn-key")
 	_, _, found = cache.Get("conn-key")
 	if found {
-		t.Error("conn-key should be deleted")
+		t.Error("Connection list should be invalidated")
 	}
 
 	// Delete from data tier
 	cache.InvalidateEdgeByKey("data-key")
 	_, _, found = cache.Get("data-key")
 	if found {
-		t.Error("data-key should be deleted")
+		t.Error("Edge should be invalidated")
 	}
 }
 
@@ -220,6 +223,7 @@ func TestMultiLevelCache_Clear(t *testing.T) {
 
 	// Clear cache
 	cache.Clear()
+
 
 	// Verify all entries are gone
 	_, found1 := cache.GetNode("hot1")
@@ -247,6 +251,7 @@ func TestMultiLevelCache_Stats(t *testing.T) {
 
 	// Get stats
 	stats := cache.Stats()
+
 
 	if stats.TotalSize == 0 {
 		t.Error("Total size should be non-zero")
@@ -313,19 +318,22 @@ func TestMultiLevelCache_ConcurrentAccess(t *testing.T) {
 
 	// Writers to hot tier
 	for i := 0; i < 10; i++ {
+		wg.Add(1)
 		go func(id int) {
+			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				key := string(rune('h'+id)) + string(rune('0'+j%10))
 				node := &graph.Node{ID: key}
 				cache.PutNode(key, node)
 			}
-			done <- true
 		}(i)
 	}
 
 	// Writers to connection tier
 	for i := 0; i < 10; i++ {
-		go func(id int) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				key := string(rune('c'+id)) + string(rune('0'+j%10))
 				edge := &graph.Edge{ID: key, FromNodeID: "conn-node", ToNodeID: "conn-target"}
@@ -343,8 +351,7 @@ func TestMultiLevelCache_ConcurrentAccess(t *testing.T) {
 				edge := &graph.Edge{ID: key, FromNodeID: "data-node", ToNodeID: "data-target"}
 				cache.PutEdge(key, edge)
 			}
-			done <- true
-		}(i)
+		}()
 	}
 
 	// Wait for all
@@ -545,8 +552,9 @@ func BenchmarkMultiLevelCache_Get(b *testing.B) {
 		cache.Put(string(rune(i)), node, tier)
 	}
 
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cache.Get(string(rune(i % 10000)))
+		cache.GetNode(string(rune(i % 10000)))
 	}
 }
