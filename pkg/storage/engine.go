@@ -82,7 +82,7 @@ func NewEngine(config *Config) (*Engine, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Create cache (Phase 2)
-	mlCache := cache.NewMultiLevelCache(config.CacheSize)
+	mlCache := cache.NewMultiLevelCacheFromSize(config.CacheSize)
 
 	// Create flusher (Phase 2)
 	flusherConfig := &persistence.Config{
@@ -95,7 +95,7 @@ func NewEngine(config *Config) (*Engine, error) {
 	}
 
 	// Create compactor (Phase 3)
-	compactorConfig := &compaction.DefaultConfig()
+	compactorConfig := compaction.DefaultConfig()
 	compactorConfig.DataDir = config.DataDir + "/sstables"
 	compactor, err := compaction.NewCompactor(compactorConfig)
 	if err != nil {
@@ -164,7 +164,7 @@ func (e *Engine) Start() error {
 	}
 
 	// Start compactor (Phase 3)
-	if err := e.compactor.Start(e.ctx, 30 * time.Second); err != nil {
+	if err := e.compactor.Start(e.ctx, 30*time.Second); err != nil {
 		e.running.Store(false)
 		return fmt.Errorf("failed to start compactor: %w", err)
 	}
@@ -174,7 +174,7 @@ func (e *Engine) Start() error {
 		e.wg.Add(1)
 		go e.runLaneFlusher(lane)
 	}
-	
+
 	return nil
 }
 
@@ -245,7 +245,7 @@ func (e *Engine) GetNode(ctx context.Context, nodeID string) (*graph.Node, error
 	node, err := lane.ReadNode(ctx, nodeID)
 	if err == nil {
 		// Cache the node (Phase 2)
-		e.cache.PutNode(node)
+		e.cache.PutNodeByID(node)
 		return node, nil
 	}
 
@@ -258,7 +258,7 @@ func (e *Engine) GetNode(ctx context.Context, nodeID string) (*graph.Node, error
 		node, err := l.ReadNode(ctx, nodeID)
 		if err == nil {
 			// Cache the node (Phase 2)
-			e.cache.PutNode(node)
+			e.cache.PutNodeByID(node)
 			return node, nil
 		}
 	}
@@ -340,7 +340,7 @@ func (e *Engine) GetEdge(ctx context.Context, edgeID string) (*graph.Edge, error
 	edge, err := lane.ReadEdge(ctx, edgeID)
 	if err == nil {
 		// Cache the edge (Phase 2)
-		e.cache.PutEdge(edge)
+		e.cache.PutEdgeByID(edge)
 		return edge, nil
 	}
 
@@ -352,7 +352,7 @@ func (e *Engine) GetEdge(ctx context.Context, edgeID string) (*graph.Edge, error
 		edge, err := l.ReadEdge(ctx, edgeID)
 		if err == nil {
 			// Cache the edge (Phase 2)
-			e.cache.PutEdge(edge)
+			e.cache.PutEdgeByID(edge)
 			return edge, nil
 		}
 	}
@@ -479,10 +479,10 @@ type EngineStats struct {
 	TotalOldMemtables int
 	TotalSize         int64
 	LaneStats         []WriteLaneStats
-	CacheStats        cache.MultiLevelCacheStats     // Phase 2
-	FlusherStats      persistence.FlusherStats       // Phase 2
-	CompactionStats   compaction.CompactionStats     // Phase 3
-	ManifestStats     manifest.ManifestStats         // Phase 3
+	CacheStats        cache.MultiLevelCacheStats // Phase 2
+	FlusherStats      persistence.FlusherStats   // Phase 2
+	CompactionStats   compaction.CompactionStats // Phase 3
+	ManifestStats     manifest.ManifestStats     // Phase 3
 }
 
 // Stats returns current statistics.
@@ -490,10 +490,10 @@ func (e *Engine) Stats() EngineStats {
 	stats := EngineStats{
 		NumLanes:        e.numLanes,
 		LaneStats:       make([]WriteLaneStats, e.numLanes),
-		CacheStats:      e.cache.Stats(),      // Phase 2
-		FlusherStats:    e.flusher.Stats(),    // Phase 2
-		CompactionStats: e.compactor.Stats(),  // Phase 3
-		ManifestStats:   e.manifest.Stats(),   // Phase 3
+		CacheStats:      e.cache.Stats(),     // Phase 2
+		FlusherStats:    e.flusher.Stats(),   // Phase 2
+		CompactionStats: e.compactor.Stats(), // Phase 3
+		ManifestStats:   e.manifest.Stats(),  // Phase 3
 	}
 
 	for i, lane := range e.writeLanes {
@@ -525,7 +525,7 @@ func (e *Engine) runLaneFlusher(lane *WriteLane) {
 		case <-lane.WaitForFlush():
 			// Get old memtables to flush
 			oldMemtables := lane.GetOldMemtables()
-			
+
 			for _, mt := range oldMemtables {
 				if mt.IsFrozen() {
 					// Flush to SSTable
@@ -534,7 +534,7 @@ func (e *Engine) runLaneFlusher(lane *WriteLane) {
 						fmt.Printf("Error flushing memtable for lane %d: %v\n", lane.id, err)
 						continue
 					}
-					
+
 					// Remove flushed memtable
 					lane.RemoveOldMemtable(mt)
 				}

@@ -1,4 +1,3 @@
-
 // Package compaction provides merger functionality for k-way merge of SSTables.
 package compaction
 
@@ -6,6 +5,7 @@ import (
 	"container/heap"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/ayushanand18/crazygraphstore/pkg/sstable"
 )
@@ -28,8 +28,8 @@ type mergeEntry struct {
 
 // sstableScanner wraps an SSTable reader with scanning state.
 type sstableScanner struct {
-	reader   *sstable.Reader
-	idx      int
+	reader       *sstable.Reader
+	idx          int
 	currentKey   string
 	currentValue []byte
 	done         bool
@@ -68,7 +68,7 @@ func newMerger(tables []*TableInfo) *merger {
 			continue
 		}
 		readers = append(readers, reader)
-		
+
 		scanner := &sstableScanner{
 			reader: reader,
 			idx:    i,
@@ -132,6 +132,62 @@ func (m *merger) Close() error {
 	for _, reader := range m.readers {
 		reader.Close()
 	}
+	return nil
+}
+
+// Merge performs k-way merge of SSTables and writes to output path.
+func (m *merger) Merge(inputPaths []string, outputPath string) error {
+	// Create output writer
+	writer, err := sstable.NewWriter(outputPath, 4096)
+	if err != nil {
+		return fmt.Errorf("failed to create output writer: %w", err)
+	}
+	defer writer.Close()
+
+	// Create readers for all input files
+	readers := make([]*sstable.Reader, 0, len(inputPaths))
+	for idx, path := range inputPaths {
+		reader, err := sstable.NewReader(path)
+		if err != nil {
+			return fmt.Errorf("failed to open input file %s: %w", path, err)
+		}
+		defer reader.Close()
+		readers[idx] = reader
+	}
+
+	// Create table info for each input
+	tables := make([]*TableInfo, 0, len(inputPaths))
+	for idx, path := range inputPaths {
+		stat, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("failed to stat input file %s: %w", path, err)
+		}
+		tables = append(tables, &TableInfo{
+			Path:  path,
+			Size:  stat.Size(),
+			Level: 0, // Assume level 0 for input files
+		})
+	}
+
+	// Create a new merger with these tables
+	mergeMerger := newMerger(tables)
+	defer mergeMerger.Close()
+
+	// Merge all entries and write to output
+	for {
+		key, value, err := mergeMerger.Next()
+		if err != nil {
+			if err == ErrMergerDone {
+				break
+			}
+			return fmt.Errorf("merge error: %w", err)
+		}
+
+		if err := writer.Add(key, value); err != nil {
+			return fmt.Errorf("failed to write merged entry: %w", err)
+		}
+	}
+
 	return nil
 }
 
