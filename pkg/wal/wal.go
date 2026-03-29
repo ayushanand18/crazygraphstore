@@ -26,6 +26,7 @@ type WAL struct {
 	stopCh     chan struct{}
 	wg         sync.WaitGroup
 	mu         sync.Mutex
+	closed     atomic.Bool
 
 	// Direct I/O support
 	useDirectIO   bool
@@ -219,6 +220,10 @@ func NewWAL(laneID int, config *Config) (*WAL, error) {
 
 // Append writes an entry to the WAL.
 func (w *WAL) Append(entryType EntryType, key string, value []byte) error {
+	if w.closed.Load() {
+		return fmt.Errorf("wal is closed")
+	}
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -317,6 +322,10 @@ func (w *WAL) backgroundSync() {
 
 // Sync flushes the buffer and syncs to disk.
 func (w *WAL) Sync() error {
+	if w.closed.Load() {
+		return fmt.Errorf("wal is closed")
+	}
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -344,13 +353,31 @@ func (w *WAL) Sync() error {
 
 // Close closes the WAL.
 func (w *WAL) Close() error {
+	if !w.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+
 	close(w.stopCh)
 	w.wg.Wait()
 
-	// Final sync
-	if err := w.Sync(); err != nil {
-		return err
+	// Final sync without the public closed check.
+	w.mu.Lock()
+	if w.useDirectIO {
+		if err := w.alignedBuffer.Flush(w.file); err != nil {
+			w.mu.Unlock()
+			return fmt.Errorf("failed to flush aligned buffer: %w", err)
+		}
+	} else {
+		if err := w.writer.Flush(); err != nil {
+			w.mu.Unlock()
+			return fmt.Errorf("failed to flush buffer: %w", err)
+		}
 	}
+	if err := w.file.Sync(); err != nil {
+		w.mu.Unlock()
+		return fmt.Errorf("failed to sync file: %w", err)
+	}
+	w.mu.Unlock()
 
 	if err := w.file.Close(); err != nil {
 		return fmt.Errorf("failed to close WAL file: %w", err)

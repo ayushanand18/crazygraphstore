@@ -1,4 +1,3 @@
-
 // Package compaction provides SSTable compaction to reduce read amplification.
 package compaction
 
@@ -20,35 +19,35 @@ type Strategy int
 
 const (
 	StrategySizeTiered Strategy = iota // Merge SSTables of similar size
-	StrategyLeveled                     // Leveled compaction (RocksDB-style)
+	StrategyLeveled                    // Leveled compaction (RocksDB-style)
 )
 
 // Compactor manages SSTable compaction.
 type Compactor struct {
-	dataDir       string
-	strategy      Strategy
-	maxTableSize  int64
-	running       atomic.Bool
-	stopCh        chan struct{}
-	wg            sync.WaitGroup
-	
+	dataDir      string
+	strategy     Strategy
+	maxTableSize int64
+	running      atomic.Bool
+	stopCh       chan struct{}
+	wg           sync.WaitGroup
+
 	// Tables being managed
-	tables     []*TableInfo
-	tablesMu   sync.RWMutex
-	
+	tables   []*TableInfo
+	tablesMu sync.RWMutex
+
 	// Statistics
-	totalCompactions atomic.Uint64
-	totalBytesRead   atomic.Uint64
-	totalBytesWritten atomic.Uint64
+	totalCompactions   atomic.Uint64
+	totalBytesRead     atomic.Uint64
+	totalBytesWritten  atomic.Uint64
 	lastCompactionTime atomic.Value // time.Time
 }
 
 // TableInfo holds metadata about an SSTable.
 type TableInfo struct {
-	Path      string
-	Size      int64
-	Level     int
-	CreatedAt time.Time
+	Path       string
+	Size       int64
+	Level      int
+	CreatedAt  time.Time
 	NumEntries uint64
 }
 
@@ -221,7 +220,7 @@ func (c *Compactor) selectTablesForSizeTieredCompaction() []*TableInfo {
 	var group []*TableInfo
 	for i := 0; i < len(sorted)-1; i++ {
 		group = []*TableInfo{sorted[i]}
-		
+
 		for j := i + 1; j < len(sorted) && len(group) < 4; j++ {
 			// Check if size is within 2x
 			if sorted[j].Size <= sorted[i].Size*2 {
@@ -274,7 +273,7 @@ func (c *Compactor) compactTables(tables []*TableInfo) (*TableInfo, error) {
 
 	// Merge tables using a min-heap (k-way merge)
 	merger := newMerger(tables)
-	
+
 	for {
 		key, value, err := merger.Next()
 		if err != nil {

@@ -1,10 +1,7 @@
 package cache
 
 import (
-	"sync"
 	"testing"
-
-	"github.com/ayushanand18/crazygraphstore/pkg/graph"
 
 	"github.com/ayushanand18/crazygraphstore/pkg/graph"
 )
@@ -224,7 +221,6 @@ func TestMultiLevelCache_Clear(t *testing.T) {
 	// Clear cache
 	cache.Clear()
 
-
 	// Verify all entries are gone
 	_, found1 := cache.GetNode("hot1")
 	_, found2 := cache.GetEdge("conn1")
@@ -251,7 +247,6 @@ func TestMultiLevelCache_Stats(t *testing.T) {
 
 	// Get stats
 	stats := cache.Stats()
-
 
 	if stats.TotalSize == 0 {
 		t.Error("Total size should be non-zero")
@@ -318,22 +313,19 @@ func TestMultiLevelCache_ConcurrentAccess(t *testing.T) {
 
 	// Writers to hot tier
 	for i := 0; i < 10; i++ {
-		wg.Add(1)
 		go func(id int) {
-			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				key := string(rune('h'+id)) + string(rune('0'+j%10))
 				node := &graph.Node{ID: key}
 				cache.PutNode(key, node)
 			}
+			done <- true
 		}(i)
 	}
 
 	// Writers to connection tier
 	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		go func(id int) {
 			for j := 0; j < 100; j++ {
 				key := string(rune('c'+id)) + string(rune('0'+j%10))
 				edge := &graph.Edge{ID: key, FromNodeID: "conn-node", ToNodeID: "conn-target"}
@@ -351,7 +343,8 @@ func TestMultiLevelCache_ConcurrentAccess(t *testing.T) {
 				edge := &graph.Edge{ID: key, FromNodeID: "data-node", ToNodeID: "data-target"}
 				cache.PutEdge(key, edge)
 			}
-		}()
+			done <- true
+		}(i)
 	}
 
 	// Wait for all
@@ -551,7 +544,6 @@ func BenchmarkMultiLevelCache_Get(b *testing.B) {
 		node := &graph.Node{ID: string(rune(i))}
 		cache.Put(string(rune(i)), node, tier)
 	}
-
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
